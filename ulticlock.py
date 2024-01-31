@@ -5,7 +5,7 @@ from config_manager import JsonConfig
 
 config = JsonConfig("ulticlock.config")
 icalendar_url = config.ical_url
-ical_manager = IcalManager(icalendar_url)
+ical_manager = IcalManager(icalendar_url, config)
 
 alarms_database = sqlManager("/tmp/alarms.db")
 next_event = alarms_database.get_next_alarm()

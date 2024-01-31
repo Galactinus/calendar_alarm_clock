@@ -3,11 +3,13 @@ import requests
 import recurring_ical_events
 from icalendar import Calendar
 from operator import itemgetter
+from config_manager import JsonConfig
 
 class IcalManager:
-    def __init__(self, icalendar_url):
+    def __init__(self, icalendar_url, config):
         self.icalendar_url = icalendar_url
         self.events = []
+        self.config = config
 
     def fetch_and_parse_events(self):
         # Fetch iCalendar data from the URL
@@ -33,14 +35,16 @@ class IcalManager:
             event_id = event.get("UID")
             if event_date:
                 event_id += f":{event_date.strftime('%m-%d')}"
-            event_info = {
+                event_info = {
                 "date": event["DTSTART"].dt.date(),
                 "start_time": event["DTSTART"].dt.time(),
                 "end_time": event["DTEND"].dt.time(),
                 "title": event["SUMMARY"],
                 "event_id": event_id,
-            }
-            self.events.append(event_info)
+                }
+                if (event_info["title"].strip().startswith(self.config.alarm_keyword)):
+                    print("Found one!")
+                    self.events.append(event_info)
 
         # Sort the events by start time
         self.events.sort(key=lambda x: (x["date"], x["start_time"]))

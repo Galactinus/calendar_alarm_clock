@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 class sqlManager:
     def __init__(self, db_file):
@@ -42,8 +42,14 @@ class sqlManager:
 
     def get_next_alarm(self):
         cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM events WHERE date >= ? ORDER BY date, start_time LIMIT 1",
-                       (datetime.now().strftime('%Y-%m-%d'),))
+        current_time = datetime.now()
+        current_time = current_time - timedelta(minutes=1)
+
+        current_datetime = current_time.strftime('%Y-%m-%d %H:%M:%S')
+
+        cursor.execute("SELECT * FROM events WHERE date || ' ' || start_time >= ? ORDER BY date || ' ' || start_time LIMIT 1",
+               (current_datetime,))
+        
         row = cursor.fetchone()
         if row:
             event_id, date, start_time, end_time, title = row
