@@ -4,16 +4,39 @@ import recurring_ical_events
 from icalendar import Calendar
 from operator import itemgetter
 from config_manager import JsonConfig
+from requests.auth import HTTPBasicAuth
+import requests_auth
+
+
+# Disable logging warnings when user is not using cert check
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
 
 class IcalManager:
-    def __init__(self, icalendar_url, config):
-        self.icalendar_url = icalendar_url
+    def __init__(self, calendar_obj, config):
+        self.calendar = calendar_obj
         self.events = []
         self.config = config
 
     def fetch_and_parse_events(self):
         # Fetch iCalendar data from the URL
-        response = requests.get(self.icalendar_url)
+        print("Trying to read calendar: " + self.calendar["name"])
+        auth = False
+        if len(self.calendar["password"]) > 0:
+            auth = True
+        try:
+            if auth:
+                # print("auth was " + HTTPBasicAuth(self.calendar["user_name"], self.calendar["password"]).)
+                response = requests.get(self.calendar["ical_url"],
+                                        auth=HTTPBasicAuth(self.calendar["user_name"], 
+                                        self.calendar["password"]), 
+                                        verify=self.calendar["verify_cert"])
+            else:
+                response = requests.get(self.calendar["ical_url"], verify=self.calendar["verify_cert"])
+        except requests.exceptions.ConnectionError:
+            print("Unable to get calendar events, exiting now")
+            exit()
         if response.status_code != 200:
             raise Exception(f"Failed to fetch iCalendar data: Status Code {response.status_code}")
 

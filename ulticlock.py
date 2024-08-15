@@ -4,10 +4,10 @@ from config_manager import JsonConfig
 # Example usage
 
 config = JsonConfig("ulticlock.config")
-icalendar_url = config.ical_url
-ical_manager = IcalManager(icalendar_url, config)
+calendar = config.calendars[1]
+ical_manager = IcalManager(calendar, config)
 
-alarms_database = sqlManager("/tmp/alarms.db")
+alarms_database = sqlManager(config.database_path)
 next_event = alarms_database.get_next_alarm()
 print("Stored event")
 if next_event != None:

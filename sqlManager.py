@@ -4,7 +4,13 @@ from datetime import datetime, timedelta
 class sqlManager:
     def __init__(self, db_file):
         self.db_file = db_file
-        self.conn = sqlite3.connect(db_file)
+        try:
+            self.conn = sqlite3.connect(db_file)
+        except sqlite3.OperationalError:
+            print("Unable to open database location")
+            exit()
+        
+        
         self.create_table()
 
 
