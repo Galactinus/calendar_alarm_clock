@@ -9,7 +9,17 @@
             "type": "debugpy",
             "request": "launch",
             "program": "ulticlock.py",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "preLaunchTask": "runAsRoot"
+        },
+        {
+            "name": "Test Scheduler",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "test_scheduler.py",
+            "console": "integratedTerminal",
+            "sudo": true,
+            "python": "${env:venv}/bin/python3"
         }
     ]
 }

@@ -1,0 +1,15 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "runAsRoot",
+            "type": "shell",
+            "command": "sudo",
+            "args": [
+                "python3",
+                "${workspaceFolder}/test_scheduler.py"
+            ],
+            "problemMatcher": []
+        }
+    ]
+}
