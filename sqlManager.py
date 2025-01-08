@@ -28,7 +28,7 @@ class sqlManager:
         ''')
         self.conn.commit()
 
-    def store_alarms(self, events):
+    def store_alarms(self, events) -> int:
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM events")
         self.conn.commit()
