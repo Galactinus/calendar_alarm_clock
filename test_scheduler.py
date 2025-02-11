@@ -4,7 +4,13 @@ import sys
 from datetime import datetime, timedelta
 from scheduler_python_client import AlarmSchedulerPythonClient
 import random
+import logging
 
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 def check_root():
     """Check if the script is running as root."""
@@ -13,91 +19,65 @@ def check_root():
         # sys.exit(1)
 
 
-def create_alarm_script(message: str, message_id: str) -> str:
-    """Create a temporary Python script that will be executed by the alarm.
-
-    Returns:
-        str: Path to the created script
-    """
-    script_content = f"""#!/usr/bin/env python3
-import os
-import sys
-
-# Send the message
-os.system("wall '{message}'")
-
-# Clean up this script
-os.remove(sys.argv[0])
-"""
-    # Generate a random number between 10000 and 99999
-    script_path = f"/tmp/alarm_notification_{message_id}.py"
-
-    with open(script_path, "w") as f:
-        f.write(script_content)
-    os.chmod(script_path, 0o755)  # Make the script executable
-    return script_path
-
-
 def test_schedule_alarm():
-    """Test scheduling an alarm."""
+    logger.info("Starting schedule alarm test")
     alarm_id = "test-schedule" + str(random.randint(10000, 99999))
     trigger_time = datetime.now() + timedelta(seconds=30)
     time_spec = trigger_time.strftime("%Y-%m-%d %H:%M:%S")
 
-    # Create the notification script
-    script_path = create_alarm_script(
-        "Schedule Test: This alarm was triggered on schedule! " + time_spec, alarm_id
-    )
-    command = f"/usr/bin/python3 {script_path}"
-
-    print(f"Scheduling alarm '{alarm_id}' for {trigger_time.strftime('%H:%M:%S')}...")
+    logger.debug("Creating alarm %s for %s", alarm_id, trigger_time)
     scheduler = AlarmSchedulerPythonClient()
-    success = scheduler.create_systemd_timer(alarm_id, time_spec, command)
+    success = scheduler.create_systemd_timer(
+        alarm_id, 
+        time_spec, 
+        "Test alarm",
+        plugin_list=["windows_notification"]
+    )
 
     if success:
-        print(f"Alarm '{alarm_id}' scheduled successfully!")
-        print("Waiting for alarm to trigger...")
-        time.sleep(25)  # Wait until close to trigger time
-        print("Alarm should trigger in approximately 5 seconds...")
-        time.sleep(10)  # Wait to ensure alarm triggered
+        logger.info("Alarm %s scheduled successfully", alarm_id)
+        logger.debug("Waiting for alarm trigger")
+        time.sleep(25)
+        logger.info("Alarm should trigger in approximately 5 seconds")
+        time.sleep(10)
     else:
-        print(f"Failed to schedule alarm '{alarm_id}'.")
+        logger.error("Failed to schedule alarm %s", alarm_id)
 
 
 def test_delay_alarm():
     """Test scheduling and then delaying an alarm."""
     alarm_id = "test-delay" + str(random.randint(10000, 99999))
-    initial_time = datetime.now() + timedelta(seconds=30)
-    time_spec = initial_time.strftime("%Y-%m-%d %H:%M:%S")
+    initial_time = datetime.now()
+    scheduled_time = initial_time + timedelta(seconds=30)
+    time_spec = scheduled_time.strftime("%Y-%m-%d %H:%M:%S")
 
-    # Create the notification script
-    script_path = create_alarm_script(
-        "Delay Test: This alarm was triggered after being delayed! " + time_spec, alarm_id
-    )
-    command = f"/usr/bin/python3 {script_path}"
-
-    print(f"Scheduling alarm '{alarm_id}' for {initial_time.strftime('%H:%M:%S')}...")
+    print(f"Scheduling alarm '{alarm_id}' for {scheduled_time.strftime('%H:%M:%S')}...")
     scheduler = AlarmSchedulerPythonClient()
-    success = scheduler.create_systemd_timer(alarm_id, time_spec, command)
+    success = scheduler.create_systemd_timer(
+        alarm_id, 
+        time_spec, 
+        "Test delay alarm"
+    )
 
     if success:
         print(f"Alarm '{alarm_id}' scheduled successfully!")
-        print("Waiting 5 seconds before delaying...")
-        time.sleep(5)
+        print("Waiting 10 seconds before delaying...")
+        time_elapsed = 10 # 10 seconds
+        time.sleep(time_elapsed)
 
         delay_seconds = 30  # Delay by 30 seconds
         print(f"Delaying alarm '{alarm_id}' by {delay_seconds} seconds...")
         success = scheduler.snooze_alarm(alarm_id, delay_seconds)
 
         if success:
-            new_time = initial_time + timedelta(seconds=delay_seconds)
+            new_time = initial_time + timedelta(seconds=time_elapsed) + timedelta(seconds=delay_seconds)
             print(
                 f"Alarm '{alarm_id}' delayed successfully to {new_time.strftime('%H:%M:%S')}!"
             )
             print("Waiting for delayed alarm to trigger...")
-            time.sleep(50)  # Wait until 5 seconds before new trigger time
+            time.sleep(25)  # Wait until 5 seconds before new trigger time
             print("Delayed alarm should trigger in approximately 5 seconds...")
-            time.sleep(10)  # Wait to ensure alarm triggered
+            time.sleep(7)  # Wait to ensure alarm triggered
         else:
             print(f"Failed to delay alarm '{alarm_id}'.")
     else:
@@ -110,15 +90,13 @@ def test_cancel_alarm():
     trigger_time = datetime.now() + timedelta(seconds=30)
     time_spec = trigger_time.strftime("%Y-%m-%d %H:%M:%S")
 
-    # Create the notification script
-    script_path = create_alarm_script(
-        "🔔 Cancel Test: If you see this, the cancellation failed!", alarm_id
-    )
-    command = f"/usr/bin/python3 {script_path}"
-
     print(f"Scheduling alarm '{alarm_id}' for {trigger_time.strftime('%H:%M:%S')}...")
     scheduler = AlarmSchedulerPythonClient()
-    success = scheduler.create_systemd_timer(alarm_id, time_spec, command)
+    success = scheduler.create_systemd_timer(
+        alarm_id, 
+        time_spec, 
+        "Test cancel alarm"
+    )
 
     if success:
         print(f"Alarm '{alarm_id}' scheduled successfully!")

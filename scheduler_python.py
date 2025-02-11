@@ -13,6 +13,13 @@ import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
 import urllib.parse
+from plugins.plugin_manager import PluginManager
+
+# Add near the top after imports
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(order=True)
@@ -20,6 +27,7 @@ class AlarmTask:
     trigger_time: datetime
     alarm_id: str
     command: str
+    plugin_list: Optional[List[str]] = None
 
     def __post_init__(self):
         # Make sure alarm_id isn't used in sorting
@@ -27,8 +35,16 @@ class AlarmTask:
 
 
 class AlarmSchedulerPython:
-    def __init__(self, host="localhost", port=8080):
+    def __init__(
+        self, host="localhost", port=8080, plugins_dir: Path = Path("plugins")
+    ):
         """Initialize the Python-based Alarm Scheduler."""
+        logger.debug(
+            "Initializing scheduler on %s:%s with plugins from %s",
+            host,
+            port,
+            plugins_dir,
+        )
         self.temp_dir = Path(tempfile.gettempdir()) / "alarm_scripts"
         self.temp_dir.mkdir(exist_ok=True)
 
@@ -51,30 +67,49 @@ class AlarmSchedulerPython:
         )
         self.server_thread.start()
 
-        logging.info(f"Alarm scheduler started on {host}:{port}")
+        # Initialize plugin system
+        self.plugin_manager = PluginManager(plugins_dir)
+        self.plugin_manager.discover_plugins()
+
+        logger.info("Alarm scheduler started on %s:%s", host, port)
 
     def _scheduler_loop(self):
         """Main scheduler loop that checks and executes tasks."""
+        logger.debug("Starting scheduler loop")
         while self.running:
             now = datetime.now()
-
             with self.task_lock:
-                # Check if there are any tasks to execute
+                if self.tasks:
+                    logger.debug(
+                        "Current time: %s, Next task: %s",
+                        now,
+                        self.tasks[0].trigger_time,
+                    )
                 while self.tasks and self.tasks[0].trigger_time <= now:
                     task = heapq.heappop(self.tasks)
+                    logger.info("Task %s due for execution", task.alarm_id)
                     threading.Thread(target=self._execute_task, args=(task,)).start()
-
-            # Sleep until next check or event
             time.sleep(1)
+        logger.debug("Scheduler loop ended")
 
     def _execute_task(self, task: AlarmTask):
-        """Execute a task and clean up."""
+        """Execute a task using the plugin system."""
+        logger.info("Executing task %s", task.alarm_id)
         try:
-            subprocess.run(task.command, shell=True)
+            self.plugin_manager.execute_all(task.alarm_id, task.plugin_list)
+
+            # Update database status
+            with self.db.conn:
+                self.db.conn.execute(
+                    """
+                    UPDATE events SET status = 'triggered'
+                    WHERE event_id = ?
+                """,
+                    (task.alarm_id,),
+                )
+
         except Exception as e:
-            logging.error(f"Error executing task {task.alarm_id}: {e}")
-        finally:
-            self._cleanup_task(task.alarm_id)
+            logger.error("Execution failed: %s", e, exc_info=True)
 
     def _cleanup_task(self, alarm_id: str):
         """Clean up any resources associated with a task."""
@@ -97,7 +132,7 @@ class AlarmSchedulerPython:
             self.task_event.set()
             return True
         except Exception as e:
-            logging.error(f"Error creating alarm {alarm_id}: {e}")
+            logger.error("Error creating alarm %s: %s", alarm_id, e)
             return False
 
     def modify_alarm_time(self, alarm_id: str, new_time_spec: str) -> bool:
@@ -123,7 +158,7 @@ class AlarmSchedulerPython:
 
             return False
         except Exception as e:
-            logging.error(f"Error modifying alarm {alarm_id}: {e}")
+            logger.error("Error modifying alarm %s: %s", alarm_id, e)
             return False
 
     def cancel_alarm(self, alarm_id: str) -> bool:
@@ -136,17 +171,55 @@ class AlarmSchedulerPython:
             self._cleanup_task(alarm_id)
             return True
         except Exception as e:
-            logging.error(f"Error canceling alarm {alarm_id}: {e}")
+            logger.error("Error canceling alarm %s: %s", alarm_id, e)
             return False
 
     def snooze_alarm(self, alarm_id: str, snooze_seconds: int = 540) -> bool:
         """Snooze an alarm for specified seconds."""
         try:
-            new_time = datetime.now() + timedelta(seconds=snooze_seconds)
-            time_spec = new_time.strftime("%Y-%m-%d %H:%M:%S")
-            return self.modify_alarm_time(alarm_id, time_spec)
+            with self.task_lock:
+                original_task = next(
+                    (t for t in self.tasks if t.alarm_id == alarm_id), None
+                )
+
+            if original_task:
+                new_time = datetime.now() + timedelta(seconds=snooze_seconds)
+                new_id = f"{alarm_id}_snooze_{int(new_time.timestamp())}"
+
+                # Create new snooze task
+                new_task = AlarmTask(
+                    trigger_time=new_time,
+                    alarm_id=new_id,
+                    command=original_task.command,
+                    plugin_list=original_task.plugin_list,
+                )
+
+                # Update database with original event reference
+                self.db.conn.execute(
+                    """
+                    INSERT INTO events 
+                    (event_id, date, start_time, source, status, original_event_id)
+                    VALUES (?, ?, ?, 'system', 'snoozed', ?)
+                """,
+                    (
+                        new_id,
+                        new_time.date().isoformat(),
+                        new_time.time().isoformat(),
+                        alarm_id,  # Store original event ID
+                    ),
+                )
+                self.db.conn.commit()
+
+                # Schedule new task
+                with self.task_lock:
+                    heapq.heappush(self.tasks, new_task)
+
+                # Mark original as triggered
+                self.cancel_alarm(alarm_id)
+                return True
+            return False
         except Exception as e:
-            logging.error(f"Error snoozing alarm {alarm_id}: {e}")
+            logger.error("Error snoozing alarm %s: %s", alarm_id, e)
             return False
 
     def get_alarm_status(self, alarm_id: str) -> Dict[str, Union[bool, Optional[str]]]:
@@ -162,12 +235,13 @@ class AlarmSchedulerPython:
 
             return {"active": False, "next_trigger": None}
         except Exception as e:
-            logging.error(f"Error getting alarm status {alarm_id}: {e}")
+            logger.error("Error getting alarm status %s: %s", alarm_id, e)
             return {"active": False, "next_trigger": None}
 
     def shutdown(self):
-        """Shutdown the scheduler and API server."""
+        """Shutdown the scheduler and cleanup plugins."""
         self.running = False
+        self.plugin_manager.cleanup()
         self.server.shutdown()
         self.server.server_close()
 

@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Union, List
 import requests
 import json
 
@@ -14,13 +14,14 @@ class AlarmSchedulerPythonClient:
         """
         self.base_url = f"http://{host}:{port}"
 
-    def create_systemd_timer(self, alarm_id: str, time_spec: str, command: str) -> bool:
+    def create_systemd_timer(self, alarm_id: str, time_spec: str, command: str, plugin_list: List[str] = None) -> bool:
         """Schedule a new alarm task.
 
         Args:
             alarm_id: Unique identifier for the alarm
             time_spec: Time specification in "YYYY-MM-DD HH:MM:SS" format
-            command: The command to execute when alarm triggers
+            command: The command to execute (kept for compatibility)
+            plugin_list: Optional list of plugin names to execute
 
         Returns:
             bool: True if successful, False otherwise
@@ -32,6 +33,7 @@ class AlarmSchedulerPythonClient:
                     "alarm_id": alarm_id,
                     "time_spec": time_spec,
                     "command": command,
+                    "plugin_list": plugin_list,
                 },
             )
             return response.status_code == 200

@@ -23,7 +23,12 @@ class sqlManager:
                 date TEXT,
                 start_time TEXT,
                 end_time TEXT,
-                title TEXT
+                title TEXT,
+                source TEXT CHECK(source IN ('ical', 'system')) DEFAULT 'ical',
+                original_event_id TEXT,  # Reference to parent ical event
+                original_time TEXT,
+                status TEXT CHECK(status IN ('active', 'triggered', 'snoozed', 'canceled')) DEFAULT 'active',
+                FOREIGN KEY(original_event_id) REFERENCES events(event_id)
             )
         ''')
         self.conn.commit()
