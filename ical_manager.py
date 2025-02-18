@@ -9,6 +9,7 @@ import urllib3
 import logging
 import pytz
 from datetime import timedelta
+from typing import List, Dict, Any, Optional
 
 # Disable logging warnings when user is not using cert check
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -22,14 +23,18 @@ logger = logging.getLogger(__name__)
 UTC_TZ = pytz.utc
 MTN_TZ = pytz.timezone("America/Denver")  # Mountain Time
 
+# Type aliases
+CalendarDict = Dict[str, str]
+EventDict = Dict[str, Any]
+
 
 class IcalManager:
-    def __init__(self, calendar_obj, config):
-        self.calendar = calendar_obj
-        self.events = []
-        self.config = config
+    def __init__(self, calendar_obj: CalendarDict, config: JsonConfig) -> None:
+        self.calendar: CalendarDict = calendar_obj
+        self.events: List[EventDict] = []
+        self.config: JsonConfig = config
 
-    def fetch_and_parse_events(self):
+    def fetch_and_parse_events(self) -> List[EventDict]:
         logger.info("Attempting to fetch calendar: %s", self.calendar["name"])
         logger.debug("Calendar URL: %s", self.calendar["ical_url"])
         logger.debug("Verify cert: %s", self.calendar["verify_cert"])

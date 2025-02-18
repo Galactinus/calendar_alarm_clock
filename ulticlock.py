@@ -1,13 +1,13 @@
 from ical_manager import IcalManager
 from sqlManager import sqlManager
 from config_manager import JsonConfig
-# Example usage
+from typing import Optional, Dict, Any, List
 
 config = JsonConfig("ulticlock.config")
 calendar = config.calendars[0]
 ical_manager = IcalManager(calendar, config)
 
-alarms_database = sqlManager(config.database_path)
+alarms_database = sqlManager(config.database_path, config.timezone)
 next_event = alarms_database.get_next_alarm()
 print("Stored event")
 if next_event is not None:
