@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 
 # Configure timezones
 UTC_TZ = pytz.utc
-MTN_TZ = pytz.timezone('America/Denver')  # Mountain Time
+MTN_TZ = pytz.timezone("America/Denver")  # Mountain Time
+
 
 class IcalManager:
     def __init__(self, calendar_obj, config):
@@ -95,24 +96,29 @@ class IcalManager:
         next_week_end_utc = next_week_end_mtn.astimezone(UTC_TZ)
 
         # Process events with timezone conversion
-        for event in recurring_ical_events.of(cal).between(today_utc, next_week_end_utc):
-            dtstart = event['DTSTART'].dt
-            dtend = event['DTEND'].dt
-            
+        for event in recurring_ical_events.of(cal).between(
+            today_utc, next_week_end_utc
+        ):
+            dtstart = event["DTSTART"].dt
+            dtend = event["DTEND"].dt
+
             # Convert to Mountain Time if timezone-aware
             if dtstart.tzinfo is not None:
                 dtstart_mtn = dtstart.astimezone(MTN_TZ)
             else:  # Handle floating times
                 dtstart_mtn = MTN_TZ.localize(dtstart)
-            
+
             event_info = {
                 "date": dtstart_mtn.date(),
                 "start_time": dtstart_mtn.time(),
-                "end_time": dtend.astimezone(MTN_TZ).time() if dtend.tzinfo else MTN_TZ.localize(dtend).time(),
+                "end_time": dtend.astimezone(MTN_TZ).time()
+                if dtend.tzinfo
+                else MTN_TZ.localize(dtend).time(),
                 "title": event["SUMMARY"],
                 "event_id": f"{event.get('UID')}:{dtstart_mtn.strftime('%m-%d')}",
+                "is_system_managed": False,
             }
-            
+
             if event_info["title"].strip().startswith(self.config.alarm_keyword):
                 print("Found one!")
                 self.events.append(event_info)

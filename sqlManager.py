@@ -1,5 +1,8 @@
 import sqlite3
 from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class sqlManager:
@@ -22,7 +25,8 @@ class sqlManager:
                 date TEXT,
                 start_time TEXT,
                 end_time TEXT,
-                title TEXT
+                title TEXT,
+                is_system_managed INTEGER DEFAULT 0  -- 0 = false, 1 = true
             )
         """)
         self.conn.commit()
@@ -42,8 +46,15 @@ class sqlManager:
             title = event["title"]
             # Convert the date to a string in the 'YYYY-MM-DD' format
             cursor.execute(
-                "INSERT INTO events (event_id, date, start_time, end_time, title) VALUES (?, ?, ?, ?, ?)",
-                (str(event_id), str(date), str(start_time), str(end_time), str(title)),
+                "INSERT INTO events (event_id, date, start_time, end_time, title, is_system_managed) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    str(event_id),
+                    str(date),
+                    str(start_time),
+                    str(end_time),
+                    str(title),
+                    0,
+                ),
             )
         self.conn.commit()
 
@@ -61,16 +72,48 @@ class sqlManager:
 
         row = cursor.fetchone()
         if row:
-            event_id, date, start_time, end_time, title = row
+            event_id, date, start_time, end_time, title, is_system_managed = row
             return {
                 "event_id": event_id,
                 "date": date,
                 "start_time": start_time,
                 "end_time": end_time,
                 "title": title,
+                "is_system_managed": bool(is_system_managed),
             }
         else:
             return None
+
+    def mark_system_managed(
+        self, event_id: str, is_system_managed: bool = True
+    ) -> bool:
+        """Mark an event as system-managed in the database.
+
+        Args:
+            event_id: The unique identifier of the event
+
+        Returns:
+            bool: True if the update was successful, False otherwise
+        """
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "UPDATE events SET is_system_managed = ? WHERE event_id = ?",
+                (is_system_managed, str(event_id)),
+            )
+            self.conn.commit()
+            logger.debug(
+                "Marked event %s, system-managed: %s", event_id, is_system_managed
+            )
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(
+                "Error marking event %s, system-managed: %s: %s",
+                event_id,
+                is_system_managed,
+                e,
+            )
+            return False
 
     def close(self):
         self.conn.close()
