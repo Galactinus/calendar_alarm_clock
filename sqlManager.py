@@ -1,11 +1,11 @@
 import sqlite3
 from datetime import datetime, timedelta
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, List
 import pytz
+from event import Event
 
-# Type aliases
-EventDict = Dict[str, Any]
+# Get logger for this module
 logger = logging.getLogger(__name__)
 
 
@@ -36,44 +36,31 @@ class sqlManager:
         """)
         self.conn.commit()
 
-    def store_alarms(self, events: List[EventDict]) -> int:
+    def store_alarms(self, events: List[Event]) -> int:
         cursor: sqlite3.Cursor = self.conn.cursor()
         cursor.execute("DELETE FROM events")
         self.conn.commit()
 
         for event in events:
-            # Convert local time to UTC for storage
-            date_str = event["date"]
-            time_str = event["start_time"]
-            end_time_str = event["end_time"]
-
-            # Parse datetime in configured timezone
-            local_dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S")
-            local_dt = self.timezone.localize(local_dt)
-
             # Convert to UTC for storage
-            utc_dt = local_dt.astimezone(pytz.UTC)
-            utc_end = datetime.strptime(
-                f"{date_str} {end_time_str}", "%Y-%m-%d %H:%M:%S"
-            )
-            utc_end = self.timezone.localize(utc_end).astimezone(pytz.UTC)
+            utc_event = event.to_utc()
 
             cursor.execute(
                 """INSERT INTO events 
                    (event_id, date, start_time, end_time, title, is_system_managed) 
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (
-                    str(event["event_id"]),
-                    utc_dt.strftime("%Y-%m-%d"),
-                    utc_dt.strftime("%H:%M:%S"),
-                    utc_end.strftime("%H:%M:%S"),
-                    str(event["title"]),
-                    0,
+                    utc_event.event_id,
+                    utc_event.date.strftime("%Y-%m-%d"),
+                    utc_event.start_time.strftime("%H:%M:%S"),
+                    utc_event.end_time.strftime("%H:%M:%S"),
+                    utc_event.title,
+                    1 if utc_event.is_system_managed else 0,
                 ),
             )
         self.conn.commit()
 
-    def get_next_alarm(self) -> Optional[EventDict]:
+    def get_next_alarm(self) -> Optional[Event]:
         """Get the next upcoming alarm in configured timezone."""
         cursor: sqlite3.Cursor = self.conn.cursor()
 
@@ -96,55 +83,34 @@ class sqlManager:
         if row:
             event_id, date, start_time, end_time, title, is_system_managed = row
 
-            # Convert UTC times back to configured timezone
-            start_dt = datetime.strptime(f"{date} {start_time}", "%Y-%m-%d %H:%M:%S")
-            start_dt = pytz.UTC.localize(start_dt)
-            local_start = start_dt.astimezone(self.timezone)
+            # Create UTC event
+            utc_event = Event(
+                date_val=datetime.strptime(date, "%Y-%m-%d").date(),
+                start_time=datetime.strptime(start_time, "%H:%M:%S").time(),
+                end_time=datetime.strptime(end_time, "%H:%M:%S").time(),
+                title=title,
+                event_id=event_id,
+                is_system_managed=bool(is_system_managed),
+                timezone="UTC",
+            )
 
-            end_dt = datetime.strptime(f"{date} {end_time}", "%Y-%m-%d %H:%M:%S")
-            end_dt = pytz.UTC.localize(end_dt)
-            local_end = end_dt.astimezone(self.timezone)
+            # Convert to local timezone
+            local_event = Event(
+                date_val=utc_event.get_start_datetime()
+                .astimezone(self.timezone)
+                .date(),
+                start_time=utc_event.get_start_datetime()
+                .astimezone(self.timezone)
+                .time(),
+                end_time=utc_event.get_end_datetime().astimezone(self.timezone).time(),
+                title=utc_event.title,
+                event_id=utc_event.event_id,
+                is_system_managed=utc_event.is_system_managed,
+                timezone=self.timezone.zone,
+            )
 
-            return {
-                "event_id": event_id,
-                "date": local_start.strftime("%Y-%m-%d"),
-                "start_time": local_start.strftime("%H:%M:%S"),
-                "end_time": local_end.strftime("%H:%M:%S"),
-                "title": title,
-                "is_system_managed": bool(is_system_managed),
-            }
+            return local_event
         return None
-
-    def mark_system_managed(
-        self, event_id: str, is_system_managed: bool = True
-    ) -> bool:
-        """Mark an event as system-managed in the database.
-
-        Args:
-            event_id: The unique identifier of the event
-
-        Returns:
-            bool: True if the update was successful, False otherwise
-        """
-        try:
-            cursor: sqlite3.Cursor = self.conn.cursor()
-            cursor.execute(
-                "UPDATE events SET is_system_managed = ? WHERE event_id = ?",
-                (is_system_managed, str(event_id)),
-            )
-            self.conn.commit()
-            logger.debug(
-                "Marked event %s, system-managed: %s", event_id, is_system_managed
-            )
-            return cursor.rowcount > 0
-        except sqlite3.Error as e:
-            logger.error(
-                "Error marking event %s, system-managed: %s: %s",
-                event_id,
-                is_system_managed,
-                e,
-            )
-            return False
 
     def close(self) -> None:
         self.conn.close()

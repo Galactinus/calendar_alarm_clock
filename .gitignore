@@ -1,3 +1,5 @@
 venv/
 __pycache__/
 *.pyc
+ulticlock.config
+test.db

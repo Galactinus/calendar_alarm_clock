@@ -10,13 +10,12 @@ import logging
 import pytz
 from datetime import timedelta
 from typing import List, Dict, Any, Optional
+from event import Event
 
 # Disable logging warnings when user is not using cert check
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Add SSL debug logging
-urllib3.add_stderr_logger()  # Enable verbose SSL logging
-
+# Get logger for this module
 logger = logging.getLogger(__name__)
 
 # Configure timezones
@@ -25,16 +24,15 @@ MTN_TZ = pytz.timezone("America/Denver")  # Mountain Time
 
 # Type aliases
 CalendarDict = Dict[str, str]
-EventDict = Dict[str, Any]
 
 
 class IcalManager:
     def __init__(self, calendar_obj: CalendarDict, config: JsonConfig) -> None:
         self.calendar: CalendarDict = calendar_obj
-        self.events: List[EventDict] = []
+        self.events: List[Event] = []
         self.config: JsonConfig = config
 
-    def fetch_and_parse_events(self) -> List[EventDict]:
+    def fetch_and_parse_events(self) -> List[Event]:
         logger.info("Attempting to fetch calendar: %s", self.calendar["name"])
         logger.debug("Calendar URL: %s", self.calendar["ical_url"])
         logger.debug("Verify cert: %s", self.calendar["verify_cert"])
@@ -82,7 +80,7 @@ class IcalManager:
 
         if response.status_code != 200:
             raise Exception(
-                f"Failed to fetch iCalendar data: Status Code {response.status_code}"
+                "Failed to fetch iCalendar data: Status Code %s" % response.status_code
             )
 
         # Initialize the list to store the events
@@ -113,22 +111,23 @@ class IcalManager:
             else:  # Handle floating times
                 dtstart_mtn = MTN_TZ.localize(dtstart)
 
-            event_info = {
-                "date": dtstart_mtn.date(),
-                "start_time": dtstart_mtn.time(),
-                "end_time": dtend.astimezone(MTN_TZ).time()
-                if dtend.tzinfo
-                else MTN_TZ.localize(dtend).time(),
-                "title": event["SUMMARY"],
-                "event_id": f"{event.get('UID')}:{dtstart_mtn.strftime('%m-%d')}",
-                "is_system_managed": False,
-            }
-
-            if event_info["title"].strip().startswith(self.config.alarm_keyword):
-                print("Found one!")
-                self.events.append(event_info)
+            if event["SUMMARY"].strip().startswith(self.config.alarm_keyword):
+                logger.debug("Found alarm event: %s", event["SUMMARY"])
+                event_obj = Event(
+                    date_val=dtstart_mtn.date(),
+                    start_time=dtstart_mtn.time(),
+                    end_time=dtend.astimezone(MTN_TZ).time()
+                    if dtend.tzinfo
+                    else MTN_TZ.localize(dtend).time(),
+                    title=event["SUMMARY"],
+                    event_id="%s:%s"
+                    % (event.get("UID"), dtstart_mtn.strftime("%m-%d")),
+                    is_system_managed=False,
+                    timezone=self.config.timezone,
+                )
+                self.events.append(event_obj)
 
         # Sort the events by start time
-        self.events.sort(key=lambda x: (x["date"], x["start_time"]))
+        self.events.sort()
 
         return self.events
