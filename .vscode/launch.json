@@ -4,13 +4,13 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
         {
             "name": "ulticlock",
             "type": "debugpy",
             "request": "launch",
             "program": "ulticlock.py",
             "console": "integratedTerminal",
-            "preLaunchTask": "runAsRoot"
         },
         {
             "name": "Test Scheduler",

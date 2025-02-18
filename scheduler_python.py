@@ -27,7 +27,6 @@ class AlarmTask:
     trigger_time: datetime
     alarm_id: str
     command: str
-    plugin_list: Optional[List[str]] = None
 
     def __post_init__(self):
         # Make sure alarm_id isn't used in sorting
@@ -96,20 +95,13 @@ class AlarmSchedulerPython:
         """Execute a task using the plugin system."""
         logger.info("Executing task %s", task.alarm_id)
         try:
-            self.plugin_manager.execute_all(task.alarm_id, task.plugin_list)
-
-            # Update database status
-            with self.db.conn:
-                self.db.conn.execute(
-                    """
-                    UPDATE events SET status = 'triggered'
-                    WHERE event_id = ?
-                """,
-                    (task.alarm_id,),
-                )
-
+            self.plugin_manager.execute_all(
+                task.alarm_id,
+                task.plugin_list if hasattr(task, "plugin_list") else None,
+            )
+            logger.debug("Task %s execution completed", task.alarm_id)
         except Exception as e:
-            logger.error("Execution failed: %s", e, exc_info=True)
+            logger.error("Error executing task %s: %s", task.alarm_id, e, exc_info=True)
 
     def _cleanup_task(self, alarm_id: str):
         """Clean up any resources associated with a task."""
@@ -177,47 +169,9 @@ class AlarmSchedulerPython:
     def snooze_alarm(self, alarm_id: str, snooze_seconds: int = 540) -> bool:
         """Snooze an alarm for specified seconds."""
         try:
-            with self.task_lock:
-                original_task = next(
-                    (t for t in self.tasks if t.alarm_id == alarm_id), None
-                )
-
-            if original_task:
-                new_time = datetime.now() + timedelta(seconds=snooze_seconds)
-                new_id = f"{alarm_id}_snooze_{int(new_time.timestamp())}"
-
-                # Create new snooze task
-                new_task = AlarmTask(
-                    trigger_time=new_time,
-                    alarm_id=new_id,
-                    command=original_task.command,
-                    plugin_list=original_task.plugin_list,
-                )
-
-                # Update database with original event reference
-                self.db.conn.execute(
-                    """
-                    INSERT INTO events 
-                    (event_id, date, start_time, source, status, original_event_id)
-                    VALUES (?, ?, ?, 'system', 'snoozed', ?)
-                """,
-                    (
-                        new_id,
-                        new_time.date().isoformat(),
-                        new_time.time().isoformat(),
-                        alarm_id,  # Store original event ID
-                    ),
-                )
-                self.db.conn.commit()
-
-                # Schedule new task
-                with self.task_lock:
-                    heapq.heappush(self.tasks, new_task)
-
-                # Mark original as triggered
-                self.cancel_alarm(alarm_id)
-                return True
-            return False
+            new_time = datetime.now() + timedelta(seconds=snooze_seconds)
+            time_spec = new_time.strftime("%Y-%m-%d %H:%M:%S")
+            return self.modify_alarm_time(alarm_id, time_spec)
         except Exception as e:
             logger.error("Error snoozing alarm %s: %s", alarm_id, e)
             return False
